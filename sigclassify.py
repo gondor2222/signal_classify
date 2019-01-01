@@ -31,7 +31,7 @@ annot_to_state = {
     'O': 11,
     'o': 12,
     'i': 13,
-    'M': 14,
+    'M': 14
 }
 num_states = annot_to_state['M'] + 1;
 
@@ -51,7 +51,6 @@ state_to_annot = {
     12: 'o',
     13: 'i',
     14: 'M'
-
 }
 
 
@@ -135,7 +134,7 @@ def main():
                         elif comment[k] == 'c' and (comment[k+2] == 'C'):
                             state = annot_to_state['v']
                             comment = comment[:k] + 'v' + comment[k+1:]
-                        elif (comment[k] == 'c' or comment[k] == 'h' or comment[k] == 'n') and (k == 10):
+                        elif (comment[k] == 'c' or comment[k] == 'h' or comment[k] == 'n') and (k >= 9 and k <= 12) and not (comment[k-1] != 'c' and comment[k] == 'c'):
                             state = annot_to_state['V']
                             comment = comment[:k] + 'V' + comment[k+1:]
                         elif (comment[k] == 'O' or comment[k] == 'o') and (comment[k-2] == 'C'):
@@ -199,13 +198,6 @@ def main():
             correct = (predicted == (i >= 2))
             num_incorrect += (1 - correct)
             num_correct += correct
-            if predicted:
-                logprob3, state_seq_enc3 = model.decode(np.transpose([seq.lexiconseq[0:stateseqstr.find('C')]]))
-                state_seq3 = []
-                for digit in state_seq_enc3:
-                    state_seq3.append(state_to_annot[digit])
-                if not correct:
-                    print(''.join(state_seq3))
             debug = False
             if not correct and debug:
                 j = 0
