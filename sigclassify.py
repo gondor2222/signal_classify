@@ -8,29 +8,30 @@ from hmmlearn import hmm
 lexicon = { 
 'R': 0, 'H': 0, 'K': 0, # positive
     'D': 1, 'E': 1, #negative
-    'S': 8, 'T': 2, 'N': 11, 'Q': 12, #polar uncharged
-    'G': 4, 'P': 9, #special
+    'S': 2, 'T': 2, 'N': 3, 'Q': 3, #polar uncharged
+    'G': 4, 'P': 8, #special
     'C': 5, 'A': 5, 'V': 6, 'I': 7, #hydrophobic
-    'L': 3, 'M': 3, 'F': 3, 'Y': 9, 'W': 10, #hydrophobic
-    'X': 13 #unknown
+    'L': 10, 'M': 10, 'F': 10, 'Y': 9, 'W': 10, #hydrophobic
+    'X': 10 #unknown
 } #0 positive, 1 negative, 2 polar uncharged, 3 special, 4 hydrophobic, 5 unknown. Cysteine counted as hydrophobic
 num_emissions = lexicon['X'] + 1
 lim_seq = 150 #max characters to read from sequence
 
 annot_to_state = {
     's': 0,
-    'S': 1,
+    'S': 1,    
     'n': 2,
     'h': 3,
     'c': 4,
     'V': 5,
     'v': 6,
-    'g': 6, #not present in original annotations    
+    'g': 7, #not present in original annotations    
     'C': 8,
+    't': 8,
     'O': 9,
     'o': 9,
     'i': 9,
-    'M': 11,
+    'M': 10,
 }
 num_states = annot_to_state['M'] + 1;
 
@@ -44,9 +45,8 @@ state_to_annot = {
     6: 'v',
     7: 'g',
     8: 'C',
-    9: 'X',
-    10: 'X',
-    11: 'M'
+    9: 'O',
+    10: 'M',
 }
 
 
@@ -69,7 +69,7 @@ class Sequence:
         self.label = label
         self.stateseq = stateseq
 
-def get_model(directories, pos):
+def get_model(directories, pos, tm):
     start = np.zeros(num_states);
     transitions = np.zeros([num_states, num_states])
     emissions = np.zeros([num_states, num_emissions])
@@ -88,29 +88,32 @@ def get_model(directories, pos):
                 prevstate = None
                 
                 for k in range(0, len(sequence)):
-                    try:
-                        state = annot_to_state[comment[k]]
-                        if k == 0 and pos:
-                            letter = 's'
-                            state = annot_to_state[letter]
-                            comment = comment[:k] + letter + comment[k+1:]
-                        elif k == 1 and pos:
-                            letter = 'S'
-                            state = annot_to_state[letter]
-                            comment = comment[:k] + letter + comment[k+1:]
-                        elif comment[k] == 'c' and (comment[k+1] == 'C'):
-                            state = annot_to_state['g']
-                            comment = comment[:k] + 'g' + comment[k+1:]
-                        elif comment[k] == 'c' and (comment[k+2] == 'C'):
-                            state = annot_to_state['v']
-                            comment = comment[:k] + 'v' + comment[k+1:]
-                        elif (comment[k] == 'c' or comment[k] == 'h' or comment[k] == 'n') and (k >= 9 and k <= 12) and not (comment[k-1] != 'c' and comment[k] == 'c'):
-                            state = annot_to_state['V']
-                            comment = comment[:k] + 'V' + comment[k+1:]
-                    except KeyError as e:
-                        print(e)
-                        print(comment)
-                        return
+                    state = annot_to_state[comment[k]]
+                    if k == 0:
+                        letter = 's'
+                        state = annot_to_state[letter]
+                        comment = comment[:k] + letter + comment[k+1:]
+                    elif (k == 1) and pos:
+                        letter = 'S'
+                        state = annot_to_state[letter]
+                        comment = comment[:k] + letter + comment[k+1:]
+                    elif (k == 2) and pos and not tm:
+                        letter = 'S'
+                        state = annot_to_state[letter]
+                        comment = comment[:k] + letter + comment[k+1:]
+                    elif comment[k] == 'c' and (comment[k+1] == 'C'):
+                        state = annot_to_state['g']
+                        comment = comment[:k] + 'g' + comment[k+1:]
+                    elif comment[k] == 'c' and (comment[k+2] == 'C'):
+                        state = annot_to_state['v']
+                        comment = comment[:k] + 'v' + comment[k+1:]
+                    elif (comment[k] == 'c' or comment[k] == 'n') and (k == 8 or k == 7) and tm:
+                        state = annot_to_state['V']
+                        comment = comment[:k] + 'V' + comment[k+1:]
+                    elif (comment[k] == 'c') and tm:
+                        letter = 't'
+                        state = annot_to_state[letter]
+                        comment = comment[:k] + letter + comment[k+1:]
                     if k == 0:
                         start[state] += 1
                     else:
@@ -169,28 +172,44 @@ def main():
     id_correct = 0
     id_wrong = 0
     
-    examples_neg, model_neg = get_model([d_neg_non_tm, d_neg_tm], False)
-    examples_pos, model_pos = get_model([d_pos_non_tm, d_pos_tm], True)
+    examples_neg_non_tm, model_neg_non_tm = get_model([d_neg_non_tm], False, False)
+    examples_pos_non_tm, model_pos_non_tm = get_model([d_pos_non_tm], True, False)
+    examples_neg_tm, model_neg_tm = get_model([d_neg_tm], False, True)
+    examples_pos_tm, model_pos_tm = get_model([d_pos_tm], False, True)
     
     chars_per_line = 80
     num_correct = 0
     num_incorrect = 0
-    examples = [examples_neg, examples_pos]
-        
-    for i in range(2):
+    examples = [examples_neg_non_tm, examples_pos_non_tm, examples_neg_tm, examples_pos_tm]
+    
+    num_neg = len(examples_neg_non_tm) + len(examples_neg_tm) #true negative count
+    num_pos = len(examples_pos_non_tm) + len(examples_pos_tm) #true positive count
+    id_pos = 0 #number of true positives
+    id_neg = 0 #number of true negatives
+    for i in range(4):
         for seq in examples[i]:
             obs = np.transpose([seq.lexiconseq])
-            logprob, state_seq_enc = model_neg.decode(obs)
-            logprob2, state_seq_enc2 = model_pos.decode(obs)            
-            state_seq = []
-            state_seq2 = []
-            for j in range(len(state_seq_enc)):
-                state_seq.append(state_to_annot[state_seq_enc[j]])
-                state_seq2.append(state_to_annot[state_seq_enc2[j]])
-            stateseqstr = ''.join(state_seq)
-            stateseqstr2 = ''.join(state_seq2)
-            predicted = logprob2 > logprob
-            correct = (predicted == i)
+            logprob,  state_seq_enc =  model_neg_non_tm.decode(obs)
+            logprob2, state_seq_enc2 = model_pos_non_tm.decode(obs)
+            logprob3, state_seq_enc3 = model_neg_tm.decode(obs)
+            logprob4, state_seq_enc4 = model_pos_tm.decode(obs)
+            logprobs = [logprob, logprob2, logprob3, logprob4]
+            seqs = [state_seq_enc, state_seq_enc2, state_seq_enc3, state_seq_enc4]
+            state_seqs = [[],[],[],[]]
+            stateseqstrs = ["","","",""]
+            for j in range(4):
+                for k in range(len(state_seq_enc)):
+                    state_seqs[j].append(state_to_annot[seqs[j][k]])
+                stateseqstrs[j] = ''.join(state_seqs[j])
+            label = np.argmax(logprobs)
+            predicted = logprob + logprob3 < logprob2 + logprob4 or label % 2 == 1
+            #predicted = label % 2 == 1
+            actual = i % 2
+            correct = (predicted == actual)
+            if correct and actual:
+                id_pos += 1
+            elif correct and not actual:
+                id_neg += 1
             num_incorrect += (1 - correct)
             num_correct += correct
             debug = False
@@ -200,12 +219,15 @@ def main():
                 while (j < len(seq.seq)):
                     num_print = min(chars_per_line, len(seq.seq) - chars_per_line)
                     print(seq.seq[j:j+num_print])
-                    print(stateseqstr[j:j+num_print])
-                    print(stateseqstr2[j:j+num_print])
+                    print(stateseqstrs[0][j:j+num_print])
+                    print(stateseqstrs[1][j:j+num_print])
+                    print(stateseqstrs[2][j:j+num_print])
+                    print(stateseqstrs[3][j:j+num_print])
                     print(seq.label[j:j+num_print])
                     print('')
                     j += chars_per_line
         print("{0} correct, {1} incorrect. Accuracy {2}%".format(num_correct, num_incorrect, num_correct * 100 / (num_correct + num_incorrect)))
+    print("Specificity {0}%. Sensitivity {1}%".format(id_neg / num_neg, id_pos / num_pos))
         
             
     
