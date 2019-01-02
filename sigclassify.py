@@ -1,4 +1,5 @@
 from __future__ import division
+from __future__ import print_function
 import sys
 import os
 import numpy as np
@@ -49,12 +50,12 @@ state_to_annot = {
 }
 
 
-d_neg_non_tm = "training_data/negative_examples/non_tm"
+d_neg_n_tm = "training_data/negative_examples/non_tm"
 d_neg_tm = "training_data/negative_examples/tm"
-d_pos_non_tm = "training_data/positive_examples/non_tm"
+d_pos_n_tm = "training_data/positive_examples/non_tm"
 d_pos_tm = "training_data/positive_examples/tm"
 
-example_directories = [d_neg_non_tm, d_neg_tm, d_pos_non_tm, d_pos_tm]
+example_directories = [d_neg_n_tm, d_neg_tm, d_pos_n_tm, d_pos_tm]
 
 class Sequence:
     def __init__(self, name, seq, lexiconseq, label, stateseq):
@@ -82,6 +83,7 @@ def printseqs(seq, stateseqstrs):
         j += chars_per_line
 
 def get_model(directories, pos, tm):
+    validation_fraction = 0.2
     start = np.zeros(num_states);
     transitions = np.zeros([num_states, num_states])
     emissions = np.zeros([num_states, num_emissions])
@@ -98,6 +100,7 @@ def get_model(directories, pos, tm):
                 lexiconseq = []
                 comment = lines[j+2][1:].strip()                
                 prevstate = None
+                is_validation = np.random.rand() < validation_fraction
                 
                 for k in range(0, len(sequence)):
                     state = annot_to_state[comment[k]]
@@ -152,19 +155,19 @@ def get_model(directories, pos, tm):
     #print(model.transmat_)
     #print(model.n_components)
     
-    return examples, model
+    return examples, examples, model
         
         
 def main():
     np.random.seed(1)
     debug = False
-    if not os.path.isdir(d_neg_non_tm):
+    if not os.path.isdir(d_neg_n_tm):
         print(d_neg_non_tm + " does not exist.")
         return
     if not os.path.isdir(d_neg_tm):
         print(d_neg_tm + " does not exist.")
         return
-    if not os.path.isdir(d_pos_non_tm):
+    if not os.path.isdir(d_pos_n_tm):
         print(d_pos_non_tm + " does not exist.")
         return
     if not os.path.isdir(d_pos_tm):
@@ -174,25 +177,26 @@ def main():
     id_correct = 0
     id_wrong = 0
     
-    ex_neg_non_tm, model_neg_non_tm = get_model([d_neg_non_tm], False, False)
-    ex_pos_non_tm, model_pos_non_tm = get_model([d_pos_non_tm], True, False)
-    ex_neg_tm, model_neg_tm = get_model([d_neg_tm], False, True)
-    ex_pos_tm, model_pos_tm = get_model([d_pos_tm], False, True)
+    ex_neg_n_tm, val_neg_n_tm, model_neg_n_tm = get_model([d_neg_n_tm], False, False)
+    ex_pos_n_tm, val_pos_n_tm, model_pos_n_tm = get_model([d_pos_n_tm],  True, False)
+    ex_neg_tm,   val_neg_tm,   model_neg_tm =   get_model([d_neg_tm],   False,  True)
+    ex_pos_tm,   val_pos_tm,   model_pos_tm =   get_model([d_pos_tm],   False,  True)
         
-    examples = [ex_neg_non_tm, ex_pos_non_tm, ex_neg_tm, ex_pos_tm]
+    examples = [ex_neg_n_tm, ex_pos_n_tm, ex_neg_tm, ex_pos_tm]
+    validation_sets = [val_neg_n_tm, val_pos_n_tm, val_neg_tm, val_pos_tm]
     
-    num_neg = len(ex_neg_non_tm) + len(ex_neg_tm) #true negative count
-    num_pos = len(ex_pos_non_tm) + len(ex_pos_tm) #true positive count
+    num_neg = len(val_neg_n_tm) + len(val_neg_tm) #true negative count
+    num_pos = len(val_pos_n_tm) + len(val_pos_tm) #true positive count
     id_pos = 0 #number of true positives
     id_neg = 0 #number of true negatives
     for i in range(4):
         actual = i % 2
         num_correct = 0
         num_incorrect = 0
-        for seq in examples[i]:
+        for seq in validation_sets[i]:
             obs = np.transpose([seq.lexiconseq])
-            logprob1, seq_enc1 = model_neg_non_tm.decode(obs)
-            logprob2, seq_enc2 = model_pos_non_tm.decode(obs)
+            logprob1, seq_enc1 = model_neg_n_tm.decode(obs)
+            logprob2, seq_enc2 = model_pos_n_tm.decode(obs)
             logprob3, seq_enc3 = model_neg_tm.decode(obs)
             logprob4, seq_enc4 = model_pos_tm.decode(obs)
             logprobs = [logprob1, logprob2, logprob3, logprob4]
