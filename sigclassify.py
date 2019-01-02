@@ -27,11 +27,11 @@ annot_to_state = {
     'v': 6,
     'g': 7, #not present in original annotations    
     'C': 8,
-    't': 8,
-    'O': 9,
-    'o': 9,
-    'i': 9,
-    'M': 10,
+    't': 9,
+    'O': 10,
+    'o': 10,
+    'i': 10,
+    'M': 11,
 }
 num_states = annot_to_state['M'] + 1;
 
@@ -47,6 +47,7 @@ state_to_annot = {
     8: 'C',
     9: 'O',
     10: 'M',
+    11: 'M'
 }
 
 
@@ -102,14 +103,17 @@ def get_model(directories, pos, tm):
                         state = annot_to_state[letter]
                         comment = comment[:k] + letter + comment[k+1:]
                     elif comment[k] == 'c' and (comment[k+1] == 'C'):
-                        state = annot_to_state['g']
-                        comment = comment[:k] + 'g' + comment[k+1:]
+                        letter = 'g'
+                        state = annot_to_state[letter]
+                        comment = comment[:k] + letter + comment[k+1:]
                     elif comment[k] == 'c' and (comment[k+2] == 'C'):
-                        state = annot_to_state['v']
-                        comment = comment[:k] + 'v' + comment[k+1:]
+                        letter = 'v'
+                        state = annot_to_state[letter]
+                        comment = comment[:k] + letter + comment[k+1:]
                     elif (comment[k] == 'c' or comment[k] == 'n') and (k == 8 or k == 7) and tm:
-                        state = annot_to_state['V']
-                        comment = comment[:k] + 'V' + comment[k+1:]
+                        letter = 'V'
+                        state = annot_to_state[letter]
+                        comment = comment[:k] + letter + comment[k+1:]
                     elif (comment[k] == 'c') and tm:
                         letter = 't'
                         state = annot_to_state[letter]
@@ -187,6 +191,8 @@ def main():
     id_pos = 0 #number of true positives
     id_neg = 0 #number of true negatives
     for i in range(4):
+        num_correct = 0
+        num_incorrect = 0
         for seq in examples[i]:
             obs = np.transpose([seq.lexiconseq])
             logprob,  state_seq_enc =  model_neg_non_tm.decode(obs)
