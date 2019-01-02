@@ -13,7 +13,7 @@ lexicon = {
     'G': 4, 'P': 8, #special
     'C': 5, 'A': 5, 'V': 6, 'I': 7, #hydrophobic
     'L': 9, 'M': 9, 'F': 9, 'Y': 8, 'W': 9, #hydrophobic
-    'X': 10 #unknown
+    'X': 11 #unknown
 }
 num_emissions = lexicon['X'] + 1
 lim_seq = 150 #max characters to read from sequence
@@ -89,6 +89,7 @@ def get_model(directories, pos, tm):
     emissions = np.zeros([num_states, num_emissions])
     model = hmm.MultinomialHMM(n_components=num_states)
     examples = []
+    validations = []
     for i in range(len(directories)):
         print(directories[i])
         for file in os.listdir(directories[i]):
@@ -118,17 +119,21 @@ def get_model(directories, pos, tm):
                     if letter != None:
                         state = annot_to_state[letter]
                         comment = comment[:k] + letter + comment[k+1:]
-                    if k == 0:
-                        start[state] += 1
-                    else:
-                        transitions[prevstate][state] += 1
                     em = lexicon[sequence[k]]
                     lexiconseq.append(em)
-                    emissions[state][em] += 1                        
+                    if not is_validation:
+                        if k == 0:
+                            start[state] += 1
+                        else:
+                            transitions[prevstate][state] += 1
+                        emissions[state][em] += 1                        
                     prevstate = state
                     stateseq.append(state)
                 seq = Sequence(name, sequence, lexiconseq, comment, stateseq)
-                examples.append(seq)
+                if is_validation:
+                    validations.append(seq)
+                else:
+                    examples.append(seq)
     
     sum_trans = np.sum(transitions, 1)[:, None]
     sum_ems = np.sum(emissions, 1)[:, None]
@@ -155,7 +160,7 @@ def get_model(directories, pos, tm):
     #print(model.transmat_)
     #print(model.n_components)
     
-    return examples, examples, model
+    return examples, validations, model
         
         
 def main():
@@ -187,6 +192,10 @@ def main():
     
     num_neg = len(val_neg_n_tm) + len(val_neg_tm) #true negative count
     num_pos = len(val_pos_n_tm) + len(val_pos_tm) #true positive count
+    
+    if num_neg + num_pos == 0:
+        print("There are no validation samples.")
+        return
     id_pos = 0 #number of true positives
     id_neg = 0 #number of true negatives
     for i in range(4):
@@ -208,7 +217,7 @@ def main():
                     state_seqs[j].append(state_to_annot[seqs[j][k]])
                 stateseqstrs[j] = ''.join(state_seqs[j])
             label = np.argmax(logprobs)
-            predicted = logprobs[0] + logprobs[2] < logprobs[1] + logprobs[3] or label % 2 == 1            
+            predicted = logprobs[0] + logprobs[2] < logprobs[1] + logprobs[3]  
             correct = (predicted == actual)
             if correct and actual:
                 id_pos += 1
