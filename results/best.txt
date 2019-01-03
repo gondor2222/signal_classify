@@ -1,0 +1,11 @@
+98.25
+94.24
+94.17
+94.12
+'R': 0, 'H': 0, 'K': 0, # positive
+    'D': 1, 'E': 1, #negative
+    'S': 2, 'T': 2, 'N': 10, 'Q': 10, #polar uncharged
+    'G': 4, 'P': 9, #special
+    'C': 5, 'A': 5, 'V': 6, 'I': 7, #hydrophobic
+    'L': 3, 'M': 3, 'F': 3, 'Y': 9, 'W': 3, #hydrophobic
+    'X': 11 #unknown
