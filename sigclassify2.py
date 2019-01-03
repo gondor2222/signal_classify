@@ -9,46 +9,16 @@ from hmmlearn import hmm
 lexicon = { 
 'R': 0, 'H': 0, 'K': 0, # positive
     'D': 1, 'E': 1, #negative
-    'S': 2, 'T': 2, 'N': 3, 'Q': 3, #polar uncharged
+    'S': 9, 'T': 2, 'N': 3, 'Q': 3, #polar uncharged
     'G': 4, 'P': 8, #special
-    'C': 5, 'A': 5, 'V': 6, 'I': 7, #hydrophobic
-    'L': 9, 'M': 9, 'F': 9, 'Y': 8, 'W': 9, #hydrophobic
-    'X': 11 #unknown
+    'C': 5, 'A': 6, 'V': 7, 'I': 10, #hydrophobic
+    'L': 11, 'M': 12, 'F': 12, 'Y': 10, 'W': 12, #hydrophobic
+    'X': 12 #unknown
 }
 num_emissions = lexicon['X'] + 1
 lim_seq = 150 #max characters to read from sequence
 
-annot_to_state = {
-    's': 0, #not present in original annotations    
-    'S': 1, #not present in original annotations    
-    'n': 2,
-    'h': 3,
-    'c': 4,
-    'V': 5, #not present in original annotations    
-    'v': 6, #not present in original annotations    
-    'g': 7, #not present in original annotations    
-    'C': 8,
-    'O': 9,
-    'o': 9,
-    'i': 9,
-    'M': 10,
-}
-num_states = annot_to_state['M'] + 1;
-
-state_to_annot = {
-    0: 's',
-    1: 'S',
-    2: 'n',
-    3: 'h',
-    4: 'c',
-    5: 'V',
-    6: 'v',
-    7: 'g',
-    8: 'C',
-    9: 'O',
-    10: 'M',
-}
-
+num_states = 30;
 
 d_neg_n_tm = "training_data/negative_examples/non_tm"
 d_neg_tm = "training_data/negative_examples/tm"
@@ -84,9 +54,8 @@ def printseqs(seq, stateseqstrs):
 
 def get_model(directories, pos, tm):
     validation_fraction = 0.2
-    start = np.zeros(num_states);
-    transitions = np.zeros([num_states, num_states])
-    emissions = np.zeros([num_states, num_emissions])
+    emissions = []
+    lengths = []
     model = hmm.MultinomialHMM(n_components=num_states)
     examples = []
     validations = []
@@ -102,58 +71,23 @@ def get_model(directories, pos, tm):
                 comment = lines[j+2][1:].strip()                
                 prevstate = None
                 is_validation = np.random.rand() < validation_fraction
+                if not is_validation:
+                    lengths.append(len(sequence))
                 
                 for k in range(0, len(sequence)):
-                    state = annot_to_state[comment[k]]
-                    letter = None
-                    if k == 0:
-                        letter = 's'
-                    elif (k == 1 or k == 2) and pos:
-                        letter = 'S'
-                    elif comment[k] == 'c' and (comment[k+1] == 'C'):
-                        letter = 'g'
-                    elif comment[k] == 'c' and (comment[k+2] == 'C'):
-                        letter = 'v'
-                    elif (comment[k] == 'c' or comment[k] == 'n') and (k == 8 or k == 7) and tm:
-                        letter = 'V'
-                    if letter != None:
-                        state = annot_to_state[letter]
-                        comment = comment[:k] + letter + comment[k+1:]
                     em = lexicon[sequence[k]]
                     lexiconseq.append(em)
                     if not is_validation:
-                        if k == 0:
-                            start[state] += 1
-                        else:
-                            transitions[prevstate][state] += 1
-                        emissions[state][em] += 1                        
-                    prevstate = state
-                    stateseq.append(state)
-                seq = Sequence(name, sequence, lexiconseq, comment, stateseq)
+                        emissions.append(em)
+                seq = Sequence(name, sequence, lexiconseq, comment, comment)
                 if is_validation:
                     validations.append(seq)
                 else:
                     examples.append(seq)
-    
-    sum_trans = np.sum(transitions, 1)[:, None]
-    sum_ems = np.sum(emissions, 1)[:, None]
-    for i in range(num_states): #change all-0 rows to all-1 rows
-        if sum_trans[i] == 0:
-            for j in range(num_states):
-                transitions[i][j] = 1
-        if sum_ems[i] == 0:
-            for j in range(len(sum_ems)):
-                emissions[i][j] = 1
-    sum_trans = np.sum(transitions, 1)[:, None]
-    sum_ems = np.sum(emissions, 1)[:, None]
-    
-    start = start / np.sum(start)
-    emissions = emissions / sum_ems
-    transitions = transitions / sum_trans
-    
-    model.startprob_ = start
-    model.emissionprob_ = emissions
-    model.transmat_ = transitions
+    emissions = np.transpose([emissions])
+    lengths = np.transpose(lengths)    
+
+    model.fit(emissions, lengths)
 
     #print(model.startprob_)
     #print(model.emissionprob_)    
@@ -198,7 +132,8 @@ def main():
         return
     id_pos = 0 #number of true positives
     id_neg = 0 #number of true negatives
-
+    negatives = []
+    positives = []
     for i in range(4):
         actual = i % 2
         num_correct = 0
@@ -211,12 +146,7 @@ def main():
             logprob4, seq_enc4 = model_pos_tm.decode(obs)
             logprobs = [logprob1, logprob2, logprob3, logprob4]
             seqs = [seq_enc1, seq_enc2, seq_enc3, seq_enc4]
-            state_seqs = [[],[],[],[]]
-            stateseqstrs = ["","","",""]
-            for j in range(4):
-                for k in range(len(seq_enc1)):
-                    state_seqs[j].append(state_to_annot[seqs[j][k]])
-                stateseqstrs[j] = ''.join(state_seqs[j])
+
             label = np.argmax(logprobs)
             predicted = logprobs[0] + logprobs[2] < logprobs[1] + logprobs[3]  
             correct = (predicted == actual)
@@ -227,12 +157,42 @@ def main():
             num_incorrect += (1 - correct)
             num_correct += correct
             
-            
+            if actual:
+                positives.append([logprobs[0] + logprobs[2], logprobs[1] + logprobs[3]])
+            else:
+                negatives.append([logprobs[0] + logprobs[2], logprobs[1] + logprobs[3]])
             if not correct and debug:
                 printseqs(seq, stateseqstrs)
-        print("{0} correct, {1} incorrect. Accuracy {2}%".format(num_correct, num_incorrect, num_correct * 100 / (num_correct + num_incorrect)))
-    print("Specificity {0}%. Sensitivity {1}%".format(id_neg / num_neg, id_pos / num_pos))
-        
+        #print("{0} correct, {1} incorrect. Accuracy {2}%".format(num_correct, num_incorrect, num_correct * 100 / (num_correct + num_incorrect)))
+    #print("Specificity {0}%. Sensitivity {1}%".format(100 * id_neg / num_neg, 100 * id_pos / num_pos))
+    print_data = True
+    if print_data:
+        sys.stdout.write("positives = [")
+        for i in range(len(positives)):
+            for j in range(2):
+                try:
+                    sys.stdout.write(str(positives[i][j]))
+                except TypeError as e:
+                    print("#")
+                    print(positives[i][j])
+                    print("#")
+                    return
+                if j == 0:
+                    sys.stdout.write(",")
+            if i < len(positives) - 1:
+                sys.stdout.write(";")
+        sys.stdout.write("];")
+        sys.stdout.write("negatives = [")
+        for i in range(len(negatives)):
+            for j in range(2):
+                sys.stdout.write(str(negatives[i][j]))
+                if j == 0:
+                    sys.stdout.write(",")
+                else:
+                    sys.stdout.write(";")
+            if i < len(negatives) - 1:
+                sys.stdout.write(";")
+        sys.stdout.write("];")
             
     
 if __name__ == "__main__":
