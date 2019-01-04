@@ -1,0 +1,118 @@
+Workload:
+
+December 31: 14:30-05:30
+Lots of work to setup and understand the problem. Looked into amino acids, signal peptides and signal peptidase, classes of amino acids, labels on provided examples. Looked up signal logos for signal peptides to guide decisions to expand provided labels with new states. Considered a neural network (LSTM), but difficulty of determining parameters for that model and opacity of results led to decision to use an HMM instead.
+
+Wrote all the code to parse the datasets, and to gather statistics for setting the HMM parameters. Spent a lot of time altering the parameters to increase the accuracy of the HMM, achieved around 83% accuracy.
+
+Determining statistically significant changes to the parameters was difficult, but after achieving 85% accuracy I decided to keep any changes resulting in a larger sum of accuracies for all four groups, as long as all four remained above 85%.
+
+January  1: 15:00-18:30, 21:30-00:00
+Continued to modify parameters, trying to get better results. There are a lot of free parameters to work with (differentiated amino acids, differentiated states, number of HMMs, decision boundary). Increasing the effective number of parameters doesn't seem to create overfitting (performance decreases even on the full dataset if there are more free parameters). 
+
+Eventually moved to two competing HMMs (positive / negative) with decision based on their relative likelihood of generating the amino acid sequence. 
+
+Wrote validation partition code. Refactored code to isolate classes of free parameters. Automatic calculation of sensitivity, specificity (previously had only accuracy for the 4 categories).  Changes to parameters are now kept if the sum of specificity and sensitivity increases and both are above 85%.
+
+Finally moved to a linear combination of four HMMs trained on each dataset combined with an argmax, which provided slightly better results. 
+
+More testing, using multiple seeds for partitions this time. 
+
+ January  2: 17:30-01:00
+
+Continued testing both two-HMM and four-HMM models, with various parameters. Four-HMM model seems to perform slightly better.  Additionally tried training the HMMs in the 'classical' HMM method, using only the sequence data, but this performed much worse and introduced a large bias between the machines. They were also much slower to even attempt, as training was much slower than the statistics collection. Abandoned protein-only training.
+
+January  3: 18:00-02:00
+Wrote code to reformat seqs for sequence logo, generated sequence logos, and used the suggested website to visualize them. Copied images into a temporary results document to gather information and summarize results. Ran a few more runs with various seeds to estimate 95% confidence intervals for specificity and sensitivity.
+
+Downloaded biomart data and began testing individual human chromosomes before realizing I had forgotten to check 'protein-coding' for the filter. Was forced to throw out all results I had so far, as the non-protein-coding sequences are not part of the requested proteome statistics.
+Redownloaded all homo sapiens protein sequences with 'protein-coding' checked. Also downloaded the equivalent for Drosophila melanogaster. Added estimated signal peptide count to temporary results document.
+
+Added general controls to make exiting from errors a bit 'cleaner'. For example, an invalid amino acid in a sequence would previously throw a KeyError, and while this error and line number would make the issue obvious to me, a user of this program would have no idea what it means. That is, most of these controls do not fix some erroneous data processing. Instead, they alert the user where and why program termination is necessary, preventing an unclean program termination.
+
+With the addition of the reformat code sequence logos, and results documents, the working folder grew from about 6 top-level files to about 20, so I separated them into new results, src, and 'trash' folders (the last is for one-off prints to investigate certain aspects of the algorithm)
+
+Started readme. It wasn't necessary before because there were only two executables, one of which takes only a single optional argument and the other of which takes no arguments. I am unlikely to forget the usage in the few days I am working on this project, so the readme is for other users or myself if I come back to the code later.
+
+Created the todo file and populated it with everything left to do before the project is turned in.
+
+January  4: 16:30-00:00
+After reading a paper on existing HMMs and considering the generated sequence logos, switched one state from "positions 8 and 9" to "three positions before cleavage site" and got better results. Moved all images and intermediate results to a latex file, and sourced bibtex citations for the required sources. Discovered most of the unavailable transcripts in my initial proteome signal peptide count were because I hadn't checked "protein coding transcript" in Biomart. Running the programs again :(
+
+Generated coordinate data for the positive classifier and negative classifier, will add the plot to the report to graphically show sensitivity and specificity.
+
+Migrated controls documentation to this document; it doesn't belong in the final report.
+
+Moved number of seeds from a definition in main to a parsed argument from the command line.
+ 
+ 
+ 
+Documentation of controls:
+Several functions use some sort of controls to ensure that improper outputs do not lead to erroneous results:
+    • If an HMM calculates that it is impossible for it to produce a given amino acid sequence, it will return a log probability of negative infinity, which can lead to results being polluted by NaNs. Any negative infinities in log probabilities are automatically clipped to -10000, an order of magnitude larger than the largest negative values returned across all samples in the example dataset.
+    • Validation will print a notice and return immediately if it detects there are no validation samples, mostly to avoid dividing by zero when calculating specificity and sensitivity. Specificity will not be printed if there are no negative samples, and sensitivity will not be printed if there are no positive samples. Any class with 0 samples will not have its accuracy calculated or printed (which would require a division by zero)
+    • The four directories used for training and validation data are verified to exist and actually be directories before the program continues execution, with an error printed and the program terminating if any of them does not exist or is a regular file.
+    • If the user specifies a file to count signal peptides in, the program will guarantee that the file exists, and print an error and return if it does not.
+    • Validation and training will halt if any sequence has a name line not starting with ‘>’, any sequence is empty, any sequence has a label and sequence of different length, any sequence contains a symbol that is not one of the 20 “classical” amino acids nor ‘X’, or any label contains a symbol not known to the label state dictionary. In combination with the trimming of whitespace before and after the sequence and labels (excluding the ‘#’), these make it effectively impossible to misformat the lines of the example datasets.
+ 
+ 
+ 
+Project organization, and response individual ideas in the Noble paper:
+
+File and directory organization: I originally kept only the datasets separate, with everything else included in the root directory. Early in the project, there were very few files in the root directory, so this didn't pose problems. As soon as the results were good enough for formal analysis, I restructured the files into a results, src, and "other" folder (called 'trash') so that the large number of new analysis programs and output files could be sorted better.
+ 
+Lab notebook: You are reading this document now. Other than not dating individual events throughout the day (which would be tedious with the high workload), I feel I followed this recommendation. Major experimental failures were mostly limited to using the wrong datasets, the causes of which are documented in this lab notebook as well.
+
+Carrying out a single experiment:
+    Individual experiments were initially documented as commit logs in the source control, with new commits using a new algorithm and the commit comment describing the changes. The program took no arguments, so a readme wasn't added until the final stages when the option for an argument to count signal peptides was added.
+    
+Handling and preventing errors: See documentation of controls above. Python is somewhat good at catching type errors, so most of the errors due to data format problems would simply crash the program and automatically print the line number and reason. I decided this wasn't enough, and parse the most common ones to give the user a more useful error message.
+
+Command Lines versus Scripts verus Programs: This program has few options and all required directories are provided in the source, so no intermediate command line scripts were required. Documentation for running the single executable is provided in the readme.
+
+Version Control: This project is version controlled at https://github.com/gondor2222/signal_classify .Commit messages typically describe any algorithmic changes, which are typically individual experiments on new parameters or model configurations. While I never needed to revert the source to an earlier version, these comments served as my experiment log, allowing me to avoid repeating experimental setups I had already done before.
+ 
+ 
+Pages used:
+    https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1000424
+        (Noble paper. Section on folder organization was unnecessary until late in the project, as the number of files was below 8 until then.
+
+    https://en.wikipedia.org/wiki/Signal_peptide (information on signal peptides, segment properties)
+    https://en.wikipedia.org/wiki/Amino_acid (list of amino acids, chart of types, documentation of unique chemical properties)
+    https://en.wikipedia.org/wiki/Proteinogenic_amino_acid (documentation of side chain properties, implications for protein structure)
+    https://www.ncbi.nlm.nih.gov/pubmed/9051728?dopt=Abstract (identification of signal peptides and cleavage sites, behind paywall and can't read even with KTH library access :( )
+    https://en.wikipedia.org/wiki/Signal_peptidase
+        (claims all known peptidases are serine proteases)
+    https://en.wikipedia.org/wiki/Serine_protease#Substrate_specificity
+        (preferences for amino acid in a sequence a serine protease will cleave at)
+    https://en.wikipedia.org/wiki/Sensitivity_and_specificity (definitions of sensitivity and specificity)
+    https://www.researchgate.net/figure/Experimental-annotation-of-signal-peptide-cleavage-The-upper-panel-shows-the-sequence_fig11_51595777
+        (signal peptide sequence logo)
+    https://www.researchgate.net/figure/Amino-acids-composition-analysis-of-signal-peptides-Sequence-logo-was-applied-to-analyze_fig2_8918147
+        (another signal peptide sequence logo)
+        
+    https://en.wikipedia.org/wiki/Protein_primary_structure (section on modification guides selection of unique amino acid classes in HMMs)
+    https://docs.scipy.org/doc/numpy-1.15.1/reference/generated/numpy.divide.html
+        (array division seemed to be using floor division, but this turned out to be an error in the dimensions of the divided array)
+    
+    https://hmmlearn.readthedocs.io/en/latest/api.html#multinomialhmm (API documentation for HMMs used)
+    https://github.com/hmmlearn/hmmlearn/issues/124 (HMM model requires all categories of emission to be observed at least once)    
+    
+    https://en.wikipedia.org/wiki/Imino_acid (confusion because this is an obsolete term for proline-type amino acids)
+    https://en.wikipedia.org/wiki/Carboxamide (Curious about properties to justify model sensitivity to being able to distinguish Asparagine, Glutamine
+    https://en.wikipedia.org/wiki/Phenol (Curious about properties to justify model sensitivity to being able to distinguish Tyrosine)
+    
+    http://www.physics.pomona.edu/sixideas/old/labs/LRM/LR11.pdf (calculating uncertainty given measurements; = t*sigma / sqrt(n))
+    http://math.mit.edu/~vebrunel/Additional%20lecture%20notes/t%20(Student%27s)%20table.pdf (student's t table)
+    https://www.ensembl.org/biomart/martview/ (proteomes)
+    http://weblogo.berkeley.edu/logo.cgi (generating sequence logos)
+    
+    See also the articles referenced in the report.
+    
+Ideas for future research:
+
+    Artificially generating proteins with non-proteinogenic amino acids substituted in specific signal places and attempting to react them with signal peptidase might give more clues as to how signal peptidase works.
+    https://en.wikipedia.org/wiki/Non-proteinogenic_amino_acids
+
+
+    Other models that use stateful machines (e.g. LSTM) probably give better results.

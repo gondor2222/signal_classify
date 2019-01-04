@@ -4,6 +4,7 @@ import sys
 import os
 import numpy as np
 from hmmlearn import hmm
+from scipy.stats import t as student_t
 
 
 lexicon = { 
@@ -11,9 +12,9 @@ lexicon = {
     'D': 1, 'E': 1, #negative
     'S': 2, 'T': 2, 'N': 3, 'Q': 3, #polar uncharged
     'G': 4, 'P': 5, #special
-    'C': 4, 'A': 6, 'V': 6, 'I': 7, #hydrophobic
-    'L': 9, 'M': 4, 'F': 9, 'Y': 8, 'W': 9, #hydrophobic
-    'X': 10 #unknown
+    'C': 6, 'A': 7, 'V': 7, 'I': 8, #hydrophobic
+    'L': 9, 'M': 6, 'F': 9, 'Y': 10, 'W': 9, #hydrophobic
+    'X': 11 #unknown
 }
 num_emissions = lexicon['X'] + 1
 lim_seq = 150 #max characters to read from sequence
@@ -45,7 +46,7 @@ state_to_annot = {
     6: 'v',
     7: 'g',
     8: 'C',
-    9: 'O',
+    9: 'x',
     10: 'M',
 }
 
@@ -179,7 +180,7 @@ def get_model(directories, pos, tm):
                         print("In file \"" + directories[i] + "/" + file + "\"")
                         return False, None, None, None
                     state = annot_to_state[comment[k]]
-                    letter = None
+                    letter = None #add extra annotations not present in original label
                     if k == 0:
                         letter = 's'
                     elif (k == 1 or k == 2) and pos:
@@ -188,7 +189,7 @@ def get_model(directories, pos, tm):
                         letter = 'g'
                     elif k < len(comment) - 2 and (comment[k+2] == 'C'):
                         letter = 'v'
-                    elif (comment[k] == 'c' or comment[k] == 'n' or comment[k] == 'h') and (k == 8 or k == 7) and tm:
+                    elif k < len(comment) - 3 and comment[k+3] == 'C':
                         letter = 'r'
                     if letter != None:
                         state = annot_to_state[letter]
@@ -240,11 +241,11 @@ def get_model(directories, pos, tm):
     #print(model.emissionprob_)    
     #print(model.transmat_)
     #print(model.n_components)
-    
+    #print(len(examples)+len(validations))
     return True, examples, validations, model
 
 def predict(seq, models):
-    obs = np.transpose([seq.lexiconseq])
+    obs = np.transpose([seq.lexiconseq]) #observation sequence must be a vertical vector
     logprob1, seq_enc1 = models[0].decode(obs)
     logprob2, seq_enc2 = models[1].decode(obs)
     logprob3, seq_enc3 = models[2].decode(obs)
@@ -253,32 +254,52 @@ def predict(seq, models):
     seqs = [seq_enc1, seq_enc2, seq_enc3, seq_enc4]
     state_seqs = [[],[],[],[]]
     stateseqstrs = ["","","",""]
-    for j in range(4):
+    anyinf = False
+    for j in range(4): #translate predicted state sequences back to labels. not currently used.
         for k in range(len(seq_enc1)):
             state_seqs[j].append(state_to_annot[seqs[j][k]])
         stateseqstrs[j] = ''.join(state_seqs[j])
-        if logprobs[j] == float('-inf'):
-            logprobs[j] == -10000
     label = np.argmax(logprobs)
-    return logprobs[0] + logprobs[2] < logprobs[1] + logprobs[3]
+    prediction = logprobs[0] + logprobs[2] < logprobs[1] + logprobs[3]
+    return prediction, [logprobs[0] + logprobs[2], logprobs[1] + logprobs[3]]
     
-
+def printcoords(negatives, positives): #prints a two lists of coordinate pairs in matlab matrix format; used for the results plots
+    sys.stdout.write("negatives = [")
+    for i in range(len(negatives)):
+        coords = negatives[i]
+        sys.stdout.write(str(coords[0]) + " " + str(coords[1]))
+        if i != len(negatives) - 1:
+            sys.stdout.write(";")
+    sys.stdout.write("];\n")
+    sys.stdout.write("positives = [")
+    for i in range(len(positives)):
+        coords = positives[i]
+        sys.stdout.write(str(coords[0]) + " " + str(coords[1]))
+        if i != len(positives) - 1:
+            sys.stdout.write(";")
+    sys.stdout.write("];\n")
     
 def runvalidation(validation_sets, classlabels, models, num_neg, num_pos):
     debug = False
+    accs = [0, 0, 0, 0]
+    specificity = None
+    sensitivity = None
     if sum(len(v_set) for v_set in validation_sets) == 0:
         print("There are no validation samples.")
         return
 
     id_pos = 0 #number of true positives
     id_neg = 0 #number of true negatives
+    all_neg = []
+    all_pos = []
     for i in range(4):
-        actual = classlabels[i]
+        actual = classlabels[i] #true label we are provided with for this dataset
         num_correct = 0
         num_incorrect = 0
         for seq in validation_sets[i]:
             obs = np.transpose([seq.lexiconseq])
-            predicted = predict(seq, models)
+            predicted, coords = predict(seq, models)
+            
             correct = (predicted == actual)
             if correct and actual:
                 id_pos += 1
@@ -287,70 +308,101 @@ def runvalidation(validation_sets, classlabels, models, num_neg, num_pos):
             num_incorrect += (1 - correct)
             num_correct += correct
             
+            if actual:
+                all_pos.append(coords)
+            else:
+                all_neg.append(coords)
             
             if not correct and debug:
                 printseqs(seq, stateseqstrs)
         if num_correct + num_incorrect != 0:
-            print("{0} correct, {1} incorrect. Accuracy {2}%".format(num_correct, num_incorrect, num_correct * 100 / (num_correct + num_incorrect)))
+            accs[i] = num_correct * 100 / (num_correct + num_incorrect)
+            #print("{0} correct, {1} incorrect. Accuracy {2}%".format(num_correct, num_incorrect, accs[i]))
+            pass
         else:
             print("Class has no samples")
     if num_neg != 0:
-        print("Specificity {0}%".format(100 * id_neg / num_neg))
+        specificity = 100 * id_neg / num_neg
+        #print("Specificity {0}%".format(specificity))
     if num_pos != 0:
-        print("Sensitivity {0}%".format(100 * id_pos / num_pos))
+        sensitivity = 100 * id_pos / num_pos
+        #print("Sensitivity {0}%".format(sensitivity))
+    #printcoords(all_neg, all_pos)
+    return accs, specificity, sensitivity
         
 def main():
-    np.random.seed(1)
-    
-    if len(sys.argv) > 1 and sys.argv[1] == '-h':
-        print("Usage: sigclassify.py [file to count signal peptides in]. Runs validation experiments if no file given.")
-        return
-    if not os.path.isdir(d_neg_n_tm):
-        print(d_neg_non_tm + " does not exist.")
-        return
-    if not os.path.isdir(d_neg_tm):
-        print(d_neg_tm + " does not exist.")
-        return
-    if not os.path.isdir(d_pos_n_tm):
-        print(d_pos_non_tm + " does not exist.")
-        return
-    if not os.path.isdir(d_pos_tm):
-        print(d_pos_tm + " does not exist.")
-        return
-    
-    id_correct = 0
-    id_wrong = 0
-    
-    success1, ex_neg_n_tm, val_neg_n_tm, model_neg_n_tm = get_model([d_neg_n_tm], False, False)
-    success2, ex_pos_n_tm, val_pos_n_tm, model_pos_n_tm = get_model([d_pos_n_tm],  True, False)
-    success3, ex_neg_tm,   val_neg_tm,   model_neg_tm =   get_model([d_neg_tm],   False,  True)
-    success4, ex_pos_tm,   val_pos_tm,   model_pos_tm =   get_model([d_pos_tm],   False,  True)
-    if not (success1 and success2 and success3 and success4):
+    if len(sys.argv) < 2 or sys.argv[1] == '-h' or not sys.argv[1].isdigit(): #help
+        print("Usage: sigclassify.py <number of test runs> [file to count signal peptides in]. Runs validation experiments if no file given.")
         return
         
-    models = [model_neg_n_tm, model_pos_n_tm, model_neg_tm, model_pos_tm]
-    examples = [ex_neg_n_tm, ex_pos_n_tm, ex_neg_tm, ex_pos_tm]
-    validation_sets = [val_neg_n_tm, val_pos_n_tm, val_neg_tm, val_pos_tm]
-    
-    num_neg = len(val_neg_n_tm) + len(val_neg_tm) #true negative count
-    num_pos = len(val_pos_n_tm) + len(val_pos_tm) #true positive count
+    num_seeds = int(sys.argv[1]) #number of seeds to test with. More seeds means smaller confidence interval for stats, but takes more time to run
+    if num_seeds < 1:
+        print("Error: number of seeds must be at least 1.")
+        return
+    if num_seeds > 100:
+        print("Error: number of seeds must be at most 100.")
+        return
+    seeds = range(num_seeds)
+    allaccs = [] #list of all accuracies (by category of data and run)
+    allspecs = [] #list of specificities for each run
+    allsens = [] #list of sensitivities for each run
+    for seed in seeds:
+        np.random.seed(seed)
 
-    if len(sys.argv) == 1:
-        runvalidation(validation_sets, [False, True, False, True], models, num_neg, num_pos)
-    if len(sys.argv) > 1:
-        if not os.path.isfile(sys.argv[1]):
-            print("Could not find file " + sys.argv[1])
+        #check that required directories exist
+        if not os.path.isdir(d_neg_n_tm):
+            print("Error: " + d_neg_non_tm + " does not exist.")
+            return
+        if not os.path.isdir(d_neg_tm):
+            print("Error: " + d_neg_tm + " does not exist.")
+            return
+        if not os.path.isdir(d_pos_n_tm):
+            print("Error: " + d_pos_non_tm + " does not exist.")
+            return
+        if not os.path.isdir(d_pos_tm):
+            print("Error: " + d_pos_tm + " does not exist.")
+            return
+        
+        success1, ex_neg_n_tm, val_neg_n_tm, model_neg_n_tm = get_model([d_neg_n_tm], False, False) #train the four models
+        success2, ex_pos_n_tm, val_pos_n_tm, model_pos_n_tm = get_model([d_pos_n_tm],  True, False)
+        success3, ex_neg_tm,   val_neg_tm,   model_neg_tm =   get_model([d_neg_tm],   False,  True)
+        success4, ex_pos_tm,   val_pos_tm,   model_pos_tm =   get_model([d_pos_tm],   False,  True)
+        if not (success1 and success2 and success3 and success4): #exit if any problems were encountered
+            return
+            
+        models = [model_neg_n_tm, model_pos_n_tm, model_neg_tm, model_pos_tm]
+        examples = [ex_neg_n_tm, ex_pos_n_tm, ex_neg_tm, ex_pos_tm]
+        validation_sets = [val_neg_n_tm, val_pos_n_tm, val_neg_tm, val_pos_tm]
+        label_by_set = [False, True, False, True]
+        
+        num_neg = len(val_neg_n_tm) + len(val_neg_tm) #true negative count
+        num_pos = len(val_pos_n_tm) + len(val_pos_tm) #true positive count
+
+        if len(sys.argv) == 2: #run validations
+            accs, specificity, sensitivity = runvalidation(validation_sets, label_by_set, models, num_neg, num_pos)
+            allaccs.append(accs)
+            allspecs.append(specificity)
+            allsens.append(sensitivity)
+    if len(sys.argv) > 2: 
+        if not os.path.isfile(sys.argv[2]):
+            print("Could not find file " + sys.argv[2])
             return
         seqs = []
-        seqs = getseqs(sys.argv[1])
+        seqs = getseqs(sys.argv[2])
         numpredicted = 0
         tenths = len(seqs) // 10
         for i in range(len(seqs)):
             seq = seqs[i]
             if i % tenths == 0:
                 print("Progress : {0}%".format(100 * i / len(seqs)))
-            numpredicted += predict(seq, models)
+            prediction, _ = predict(seq, models)
+            numpredicted += prediction
         print("Predicted number of signal peptide proteins: " + str(numpredicted))
+    tfactor = student_t.interval(0.95, len(seeds))[1]
+    print("Mean sensitivity: " + str(np.mean(allsens))  + " +- " + str(np.std(allsens)  * tfactor/np.sqrt(len(seeds))) + "(95% CI)")
+    print("Mean specificity: " + str(np.mean(allspecs)) + " +- " + str(np.std(allspecs) * tfactor/np.sqrt(len(seeds))) + "(95% CI)")
+    #print("Mean accuracy neg_n_tm, pos_n_tm, neg_tm, pos_tm: " + str(np.mean(allaccs, 0)))
+    #print("95% confidence interval for above: +- " + str(np.std(allaccs,0) * tfactor/np.sqrt(len(seeds))))
 
         
             
