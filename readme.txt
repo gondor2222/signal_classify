@@ -8,3 +8,5 @@ If any additional arguments are provided, they are expected to be files to count
 $ python src/sigclassify.py 1 proteomes/drosophila_all.faa
     will print how many sequences there are in this file, how many are valid fasta sequences, and how many of those are predicted to contain signal peptides.
 A sequence is considered in valid if it contains anything other than the 21 "classic amino acids" or X. That is, sequences with selenocysteine or pyrrolysine will be rejected.
+
+Note that you will have to download the proteomes yourself; they are too big to be provided in this project. See the readme in the proteomes folder for instructions.
